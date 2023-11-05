@@ -4,6 +4,7 @@ from typing import List, Tuple
 import os
 import math
 
+import numpy as np
 import pygame
 
 MUTATION_RATE = 0.05
@@ -103,7 +104,7 @@ class Critter:
         env.critters[child.id] = child
 
     def move(self, env: "Environment"):
-        activations = self.gene([Value(env.light(self.position.x, self.position.y))])
+        activations = self.gene([Value(light(self.position.x, self.position.y))])
         [up, down, left, right] = [a.value for a in activations]
 
         max_value = max(up, down, left, right)
@@ -123,14 +124,16 @@ class Critter:
             env.remove(self)
 
     def act(self, env: "Environment"):
-        death_factor = env.death_factor(self.position.x, self.position.y)
-        dies = uniform(0, 1) <= death_factor
+        # LEARNING: this is evaluated every tick, which is every ~16ms.
+        # This means that even a pretty low death probability happens quite fast.
+        df = death_factor(self.position.x, self.position.y)
+        dies = uniform(0, 1) <= df
         if dies:
             logger.debug(f"Critter {self.id} died. RIP.")
             env.remove(self)
             return
 
-        reproduces = uniform(0, 1) < 0.2
+        reproduces = uniform(0, 1) < 0.15
         if reproduces:
             logger.debug(f"Critter {self.id} reproduced. Congrats.")
             return self.reproduce(env)
@@ -145,27 +148,29 @@ class Environment:
             critter = Critter(Gene(), randint(0, MAP_SIZE[0]), randint(0, MAP_SIZE[1]))
             self.critters[critter.id] = critter
 
-    def light(self, x: int, y: int) -> float:
-        return x
-
-    def death_factor(self, x: int, _y: int) -> float:
-        survival_rate = 1 / (1.001 ** (_distance_to_centre((x, _y))))
-        death_rate = 1 - survival_rate
-        return death_rate
-
-
     def remove(self, critter: Critter):
         del self.critters[critter.id]
 
     def __repr__(self):
         return f"Environment({self.critters})"
 
+def death_factor(x, y) -> float:
+    return 1 - light(x, y)
 
-def _distance_to_centre(position: Tuple[int, int]) -> float:
+def light(x, y) -> float:
+    return 1 / (1.001 ** (_distance_to_centre(x, y)))
+
+def _distance_to_centre(x, y) -> float:
     return math.sqrt(
-        (position[0] - MAP_SIZE[0] / 2) ** 2 + (position[1] - MAP_SIZE[1] / 2) ** 2
+        (x - MAP_SIZE[0] / 2) ** 2 + (y - MAP_SIZE[1] / 2) ** 2
     )
 
+def gray(im):
+    im = 255 * (im / im.max())
+    w, h = im.shape
+    ret = np.empty((w, h, 3), dtype=np.uint8)
+    ret[:, :, 2] = ret[:, :, 1] = ret[:, :, 0] = im
+    return ret
 
 if __name__ == "__main__":
     env = Environment()
@@ -177,6 +182,16 @@ if __name__ == "__main__":
     running = True
     dt = 0
 
+    x = np.arange(0, 1000)
+    y = np.arange(0, 1000)
+    X, Y = np.meshgrid(x, y)
+    Z = np.vectorize(light)(X, Y)
+    Z = gray(Z)
+
+    surf = pygame.surfarray.make_surface(Z)
+    screen.blit(surf, (0, 0))
+    pygame.display.flip()
+
     iteration = 0
     while running and iteration <= 10000:
         # poll for events
@@ -185,18 +200,19 @@ if __name__ == "__main__":
             if event.type == pygame.QUIT:
                 running = False
 
-        # fill the screen with a color to wipe away anything from last frame
-        screen.fill("white")
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                # fill the screen with a color to wipe away anything from last frame
+                screen.blit(surf, (0, 0))
 
-        critters = list(env.critters.values())
-        if len(critters) == 0:
-            break
-        for critter in critters:
-            pygame.draw.circle(screen, "red", critter.position, 5)
-            critter.act(env)
+                critters = list(env.critters.values())
+                if len(critters) == 0:
+                    break
+                for critter in critters:
+                    pygame.draw.circle(screen, "red", critter.position, 5)
+                    critter.act(env)
 
-        # flip() the display to put your work on screen
-        pygame.display.flip()
+                # flip() the display to put your work on screen
+                pygame.display.flip()
 
         # limits FPS to 60
         # dt is delta time in seconds since last frame, used for framerate-
