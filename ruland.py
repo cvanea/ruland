@@ -6,8 +6,6 @@ import math
 
 import pygame
 
-os.environ["SDL_AUDIODRIVER"] = "dsp"
-
 MUTATION_RATE = 0.05
 MAP_SIZE = (1000, 1000)
 
@@ -126,13 +124,13 @@ class Critter:
 
     def act(self, env: "Environment"):
         death_factor = env.death_factor(self.position.x, self.position.y)
-        dies = uniform(0, 1) < death_factor
+        dies = uniform(0, 1) <= death_factor
         if dies:
             logger.debug(f"Critter {self.id} died. RIP.")
             env.remove(self)
             return
 
-        reproduces = uniform(0, 1) < 0.05
+        reproduces = uniform(0, 1) < 0.2
         if reproduces:
             logger.debug(f"Critter {self.id} reproduced. Congrats.")
             return self.reproduce(env)
@@ -151,11 +149,9 @@ class Environment:
         return x
 
     def death_factor(self, x: int, _y: int) -> float:
-        max_distance = MAP_SIZE[0] / 2
-        decay_rate = -math.log(0.000011) / max_distance
-
-        return math.exp(decay_rate * (_distance_to_centre((x, _y)) / 1000)) / 100
-        # return 1 - (1 / (1.001 ** (_distance_to_centre((x, _y)) / 100) ))
+        survival_rate = 1 / (1.001 ** (_distance_to_centre((x, _y))))
+        death_rate = 1 - survival_rate
+        return death_rate
 
 
     def remove(self, critter: Critter):
